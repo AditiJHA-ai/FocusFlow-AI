@@ -1,0 +1,22 @@
+# Model files (too large for GitHub)
+yolo11n.pt
+pose_landmarker_lite.task
+face_landmarker.task
+
+# Database (personal session data)
+focusflow.db
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment
+venv/
+env/
+
+# OS files
+.DS_Store
+Thumbs.db

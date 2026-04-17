@@ -1,0 +1,914 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FocusFlow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════
+   TOKENS
+══════════════════════════════════════════════ */
+:root {
+  --void:      #05030a;
+  --abyss:     #080510;
+  --deep:      #0d0818;
+  --surface:   #130f22;
+  --raised:    #1a1430;
+  --border:    #2a1f50;
+  --border-hi: #4a2f90;
+  --glow:      #7c3aed;
+  --glow-hi:   #a855f7;
+  --glow-soft: rgba(124,58,237,0.15);
+  --pink:      #e879f9;
+  --pink-dim:  rgba(232,121,249,0.15);
+  --gold:      #fbbf24;
+  --gold-dim:  rgba(251,191,36,0.12);
+  --red:       #f87171;
+  --red-dim:   rgba(248,113,113,0.12);
+  --teal:      #5eead4;
+  --teal-dim:  rgba(94,234,212,0.1);
+  --text-hi:   #ede9fe;
+  --text-med:  #a78bfa;
+  --text-lo:   #5b4d8a;
+  --serif:     'Cinzel', serif;
+  --deco:      'Cinzel Decorative', serif;
+  --body:      'Crimson Pro', serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; }
+
+body {
+  background: var(--void);
+  color: var(--text-hi);
+  font-family: var(--body);
+  font-size: 15px;
+  line-height: 1.5;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Animated smoke/fog background */
+body::before {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(ellipse 60% 40% at 20% 80%, rgba(88,28,135,0.18) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 50% at 80% 20%, rgba(109,40,217,0.14) 0%, transparent 65%),
+    radial-gradient(ellipse 70% 40% at 50% 100%, rgba(76,29,149,0.22) 0%, transparent 60%);
+  animation: smoke 12s ease-in-out infinite alternate;
+}
+@keyframes smoke {
+  0%   { opacity: 0.6; transform: scale(1) translateY(0); }
+  100% { opacity: 1;   transform: scale(1.06) translateY(-10px); }
+}
+
+/* Subtle dot grid */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background-image: radial-gradient(rgba(124,58,237,0.12) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* ══════════════════════════════════════════════
+   ORNATE BORDER FRAME
+══════════════════════════════════════════════ */
+.page-frame {
+  position: relative; z-index: 1;
+  max-width: 1300px;
+  margin: 0 auto;
+  padding: 8px;
+}
+
+/* Outer border with corner ornaments */
+.page-border {
+  border: 1px solid var(--border-hi);
+  border-radius: 2px;
+  position: relative;
+  box-shadow:
+    0 0 0 1px rgba(124,58,237,0.08),
+    0 0 40px rgba(109,40,217,0.12),
+    inset 0 0 60px rgba(76,29,149,0.06);
+}
+
+/* Corner rune ornaments */
+.corner { position: absolute; width: 36px; height: 36px; }
+.corner svg { width: 100%; height: 100%; }
+.corner-tl { top: -1px; left: -1px; }
+.corner-tr { top: -1px; right: -1px; transform: scaleX(-1); }
+.corner-bl { bottom: -1px; left: -1px; transform: scaleY(-1); }
+.corner-br { bottom: -1px; right: -1px; transform: scale(-1); }
+
+/* ══════════════════════════════════════════════
+   HEADER
+══════════════════════════════════════════════ */
+.hdr {
+  padding: 28px 36px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.hdr::after {
+  content: '';
+  position: absolute; bottom: -1px; left: 10%; right: 10%;
+  height: 1px; background: linear-gradient(90deg, transparent, var(--glow-hi), transparent);
+}
+
+.title-block { text-align: center; flex: 1; }
+.title-eyebrow {
+  font-family: var(--serif); font-size: 9px; letter-spacing: 5px;
+  text-transform: uppercase; color: var(--text-lo); margin-bottom: 4px;
+}
+.title-main {
+  font-family: var(--deco); font-size: 30px; font-weight: 700;
+  color: var(--text-hi);
+  text-shadow: 0 0 20px rgba(168,85,247,0.5), 0 0 60px rgba(124,58,237,0.2);
+  letter-spacing: 2px; line-height: 1;
+}
+.title-sub {
+  font-family: var(--serif); font-size: 10px; letter-spacing: 4px;
+  text-transform: uppercase; color: var(--text-med); margin-top: 4px;
+}
+
+/* Status rune */
+.status-rune {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  min-width: 140px;
+}
+.rune-gem {
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--glow-hi);
+  box-shadow: 0 0 8px var(--glow-hi), 0 0 20px rgba(168,85,247,0.4);
+  animation: gem-pulse 2s ease-in-out infinite;
+}
+.rune-gem.red   { background: var(--red);  box-shadow: 0 0 8px var(--red),  0 0 20px rgba(248,113,113,.4); }
+.rune-gem.gold  { background: var(--gold); box-shadow: 0 0 8px var(--gold), 0 0 20px rgba(251,191,36,.4); }
+.rune-gem.grey  { background: var(--text-lo); box-shadow: none; animation: none; }
+@keyframes gem-pulse { 0%,100%{transform:scale(1);opacity:1} 50%{transform:scale(1.3);opacity:0.7} }
+.rune-label {
+  font-family: var(--serif); font-size: 9px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--text-med);
+}
+.rune-value { font-family: var(--serif); font-size: 12px; color: var(--text-hi); letter-spacing: 1px; }
+
+/* Header buttons */
+.hdr-btns { display: flex; flex-direction: column; gap: 8px; min-width: 140px; align-items: flex-end; }
+
+.btn {
+  font-family: var(--serif); font-size: 10px; letter-spacing: 2px;
+  text-transform: uppercase; padding: 9px 22px; cursor: pointer;
+  border-radius: 1px; transition: all 0.2s; position: relative;
+  overflow: hidden;
+}
+.btn-cast {
+  background: linear-gradient(135deg, rgba(109,40,217,0.8), rgba(76,29,149,0.6));
+  color: var(--text-hi); border: 1px solid var(--border-hi);
+  box-shadow: 0 0 12px rgba(124,58,237,0.25), inset 0 1px 0 rgba(168,85,247,0.2);
+}
+.btn-cast:hover { box-shadow: 0 0 24px rgba(124,58,237,0.5), inset 0 1px 0 rgba(168,85,247,0.3); }
+.btn-cancel {
+  background: transparent; color: var(--red);
+  border: 1px solid rgba(248,113,113,0.3);
+}
+.btn-cancel:hover { background: var(--red-dim); border-color: var(--red); }
+.btn:disabled { opacity: 0.25; cursor: not-allowed; }
+.btn:active { transform: scale(0.97); }
+
+/* ══════════════════════════════════════════════
+   MAIN GRID
+══════════════════════════════════════════════ */
+.grimoire {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 0;
+}
+
+/* Divider lines */
+.grimoire > * { border-right: 1px solid var(--border); }
+.grimoire > *:last-child { border-right: none; }
+
+/* ══════════════════════════════════════════════
+   LEFT — FEED + CALIBRATION
+══════════════════════════════════════════════ */
+.feed-pane {
+  display: flex; flex-direction: column;
+  border-right: 1px solid var(--border);
+}
+
+.section-header {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.section-title {
+  font-family: var(--serif); font-size: 11px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--text-med);
+  display: flex; align-items: center; gap: 10px;
+}
+.section-title::before {
+  content: '✦';
+  font-size: 8px; color: var(--glow-hi); opacity: 0.7;
+}
+
+.feed-wrap {
+  flex: 1; position: relative; min-height: 380px;
+  background: var(--abyss);
+  overflow: hidden;
+}
+
+/* Ornate corner brackets on feed */
+.feed-wrap::before, .feed-wrap::after,
+.feed-br::before,  .feed-br::after {
+  content: ''; position: absolute; z-index: 10;
+  width: 28px; height: 28px;
+}
+.feed-wrap::before { top:10px;    left:10px;    border-top: 1px solid var(--glow-hi); border-left: 1px solid var(--glow-hi); }
+.feed-wrap::after  { top:10px;    right:10px;   border-top: 1px solid var(--glow-hi); border-right: 1px solid var(--glow-hi); }
+.feed-br::before   { bottom:10px; left:10px;    border-bottom: 1px solid var(--glow-hi); border-left: 1px solid var(--glow-hi); }
+.feed-br::after    { bottom:10px; right:10px;   border-bottom: 1px solid var(--glow-hi); border-right: 1px solid var(--glow-hi); }
+.feed-br { position: absolute; inset: 0; pointer-events: none; z-index: 10; }
+
+#videoFeed { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+.feed-inactive {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px;
+}
+.feed-inactive-glyph {
+  font-family: var(--deco); font-size: 48px; color: var(--text-lo);
+  opacity: 0.4; line-height: 1;
+}
+.feed-inactive-text { font-family: var(--serif); font-size: 10px; letter-spacing: 3px; text-transform: uppercase; color: var(--text-lo); }
+
+/* Calibration overlay */
+#calibOverlay {
+  display: none;
+  position: absolute; inset: 0; z-index: 30;
+  background: rgba(5,3,10,0.92);
+  backdrop-filter: blur(6px);
+  flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+  padding: 40px;
+}
+.calib-title { font-family: var(--deco); font-size: 18px; color: var(--text-hi); text-align: center; letter-spacing: 1px;
+  text-shadow: 0 0 20px rgba(168,85,247,0.6); }
+.calib-sub   { font-family: var(--body); font-size: 14px; color: var(--text-med); text-align: center; line-height: 1.7; font-style: italic; }
+
+/* Calibration arc */
+.calib-arc { position: relative; width: 130px; height: 130px; }
+.calib-arc svg { transform: rotate(-90deg); }
+.ca-bg   { fill: none; stroke: rgba(124,58,237,0.15); stroke-width: 3; }
+.ca-fill { fill: none; stroke: url(#calibGrad); stroke-width: 3; stroke-linecap: round;
+           stroke-dasharray: 351.9; stroke-dashoffset: 351.9; transition: stroke-dashoffset .6s ease; }
+.calib-arc-inner {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.calib-num { font-family: var(--deco); font-size: 30px; font-weight: 700; color: var(--glow-hi); line-height: 1; }
+.calib-lbl { font-family: var(--serif); font-size: 8px; letter-spacing: 2px; color: var(--text-lo); margin-top: 2px; }
+.calib-samples { font-family: var(--serif); font-size: 10px; color: var(--text-lo); letter-spacing: 2px; }
+
+/* HUD strip */
+.hud-strip {
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 24px; align-items: center;
+  background: var(--abyss);
+}
+.hud-item { display: flex; flex-direction: column; gap: 1px; }
+.hud-label { font-family: var(--serif); font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-lo); }
+.hud-val   { font-family: var(--serif); font-size: 13px; color: var(--text-hi); }
+
+/* ══════════════════════════════════════════════
+   RIGHT — STATS PANEL
+══════════════════════════════════════════════ */
+.stats-pane {
+  display: flex; flex-direction: column;
+}
+
+/* ── Focus Score ── */
+.score-block {
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+.score-block::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, var(--glow-hi), transparent);
+}
+
+.score-row { display: flex; align-items: flex-start; justify-content: space-between; }
+
+.score-numeral {
+  font-family: var(--deco); font-size: 72px; font-weight: 700; line-height: 0.85;
+  letter-spacing: -2px;
+  color: var(--glow-hi);
+  text-shadow: 0 0 30px rgba(168,85,247,0.5);
+  transition: color .6s, text-shadow .6s;
+}
+.score-numeral.warn   { color: var(--gold); text-shadow: 0 0 30px rgba(251,191,36,0.4); }
+.score-numeral.danger { color: var(--red);  text-shadow: 0 0 30px rgba(248,113,113,0.4); }
+.score-unit { font-size: 24px; vertical-align: top; letter-spacing: 0; }
+
+.score-right { text-align: right; padding-top: 8px; }
+.score-grade {
+  font-family: var(--deco); font-size: 28px; font-weight: 700;
+  transition: color .5s;
+}
+.sg-good   { color: var(--glow-hi); }
+.sg-ok     { color: var(--teal); }
+.sg-warn   { color: var(--gold); }
+.sg-danger { color: var(--red); }
+.score-grade-label { font-family: var(--serif); font-size: 9px; letter-spacing: 2px; color: var(--text-lo); text-transform: uppercase; }
+
+/* Experience bar */
+.xp-label { font-family: var(--serif); font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-lo); margin: 12px 0 6px; }
+.xp-track { height: 6px; background: rgba(124,58,237,0.15); border-radius: 1px; overflow: hidden; position: relative; }
+.xp-fill  {
+  height: 100%; border-radius: 1px;
+  background: linear-gradient(90deg, var(--glow), var(--glow-hi), var(--pink));
+  transition: width .9s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 0 8px rgba(168,85,247,0.6);
+}
+.xp-track.warn .xp-fill  { background: linear-gradient(90deg, var(--gold-dim), var(--gold)); box-shadow: 0 0 8px rgba(251,191,36,0.5); }
+.xp-track.danger .xp-fill { background: linear-gradient(90deg, var(--red-dim), var(--red)); box-shadow: 0 0 8px rgba(248,113,113,0.5); }
+
+/* ── Pomodoro ── */
+.pomo-block {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.pomo-layout { display: flex; gap: 18px; align-items: center; }
+
+.pomo-ring-wrap { flex-shrink: 0; position: relative; width: 96px; height: 96px; }
+.pomo-ring-wrap svg { transform: rotate(-90deg); }
+.pr-bg   { fill: none; stroke: rgba(124,58,237,0.12); stroke-width: 5; }
+.pr-fill {
+  fill: none; stroke-width: 5; stroke-linecap: round;
+  stroke: url(#pomoGrad);
+  stroke-dasharray: 263.9; stroke-dashoffset: 263.9;
+  transition: stroke-dashoffset 1s linear;
+  filter: drop-shadow(0 0 6px rgba(168,85,247,0.5));
+}
+.pr-inner { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.pr-pct   { font-family: var(--deco); font-size: 18px; font-weight: 700; color: var(--glow-hi); line-height: 1; }
+.pr-sub   { font-family: var(--serif); font-size: 7px; letter-spacing: 1.5px; color: var(--text-lo); margin-top: 2px; }
+
+.pomo-info { flex: 1; }
+.pomo-time {
+  font-family: var(--deco); font-size: 28px; font-weight: 700;
+  color: var(--text-hi); letter-spacing: -0.5px; line-height: 1;
+}
+.pomo-time-sub { font-family: var(--serif); font-size: 9px; letter-spacing: 2px; color: var(--text-lo); text-transform: uppercase; margin-top: 4px; margin-bottom: 12px; }
+.tomato-row { display: flex; gap: 3px; flex-wrap: wrap; align-items: center; }
+.tomato { font-size: 15px; filter: drop-shadow(0 0 4px rgba(232,121,249,0.4)); }
+.pomo-count-lbl { font-family: var(--serif); font-size: 10px; color: var(--text-lo); letter-spacing: 1px; }
+
+.break-strip {
+  display: none; margin-top: 14px;
+  background: var(--gold-dim); border: 1px solid rgba(251,191,36,0.25);
+  border-radius: 1px; padding: 10px; text-align: center;
+  font-family: var(--serif); font-size: 11px; letter-spacing: 2px;
+  text-transform: uppercase; color: var(--gold);
+  animation: break-glow 1.2s ease-in-out infinite;
+}
+@keyframes break-glow { 0%,100%{opacity:1} 50%{opacity:.55} }
+
+/* ── Gaze & Baseline ── */
+.meta-block {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+}
+.meta-item { display: flex; flex-direction: column; gap: 3px; }
+.meta-label { font-family: var(--serif); font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-lo); }
+.meta-val   { font-family: var(--deco); font-size: 16px; color: var(--text-hi); }
+.meta-sub   { font-family: var(--body); font-size: 11px; color: var(--text-lo); font-style: italic; }
+.meta-val.active { color: var(--glow-hi); text-shadow: 0 0 10px rgba(168,85,247,0.4); }
+
+/* ── Alert Counters ── */
+.counters-block {
+  display: grid; grid-template-columns: 1fr 1fr 1fr;
+  border-bottom: 1px solid var(--border);
+}
+.counter-cell {
+  padding: 18px 16px;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 4px;
+  transition: background .3s;
+}
+.counter-cell:last-child { border-right: none; }
+.counter-cell.flash-phone   { background: var(--red-dim); }
+.counter-cell.flash-posture { background: var(--gold-dim); }
+
+.counter-icon  { font-size: 14px; margin-bottom: 2px; }
+.counter-label { font-family: var(--serif); font-size: 8px; letter-spacing: 2px; text-transform: uppercase; color: var(--text-lo); }
+.counter-num   {
+  font-family: var(--deco); font-size: 38px; font-weight: 700;
+  line-height: 1; letter-spacing: -1px; transition: all .3s;
+}
+.cn-phone   { color: var(--red);  text-shadow: 0 0 12px rgba(248,113,113,0.3); }
+.cn-posture { color: var(--gold); text-shadow: 0 0 12px rgba(251,191,36,0.3); }
+.cn-time    { color: var(--teal); text-shadow: 0 0 12px rgba(94,234,212,0.3); }
+
+/* ══════════════════════════════════════════════
+   HISTORY PANE (full width)
+══════════════════════════════════════════════ */
+.history-pane {
+  border-top: 1px solid var(--border);
+  padding: 24px 28px;
+  position: relative;
+}
+.history-pane::before {
+  content: '';
+  position: absolute; top: -1px; left: 10%; right: 10%;
+  height: 1px; background: linear-gradient(90deg, transparent, var(--glow-hi), transparent);
+}
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  font-family: var(--serif); font-size: 8px; letter-spacing: 3px;
+  text-transform: uppercase; color: var(--text-lo);
+  text-align: left; padding: 0 14px 12px;
+  border-bottom: 1px solid var(--border);
+}
+tbody tr { border-bottom: 1px solid rgba(42,31,80,0.5); transition: background .2s; }
+tbody tr:last-child { border-bottom: none; }
+tbody tr:hover { background: rgba(124,58,237,0.04); }
+td { padding: 12px 14px; font-size: 14px; color: var(--text-med); }
+td:first-child { color: var(--text-hi); font-family: var(--serif); font-size: 13px; }
+
+.grade-rune {
+  display: inline-block; font-family: var(--deco); font-weight: 700;
+  font-size: 12px; padding: 3px 10px; border-radius: 1px; letter-spacing: 1px;
+}
+.gAp,.gA { background: rgba(168,85,247,0.12); color: var(--glow-hi); border: 1px solid rgba(168,85,247,0.3); }
+.gB      { background: rgba(94,234,212,0.1);  color: var(--teal);    border: 1px solid rgba(94,234,212,0.25); }
+.gC      { background: var(--gold-dim);        color: var(--gold);    border: 1px solid rgba(251,191,36,0.25); }
+.gF      { background: var(--red-dim);         color: var(--red);     border: 1px solid rgba(248,113,113,0.25); }
+
+.empty-lore {
+  text-align: center; padding: 36px 0;
+  font-family: var(--body); font-size: 14px;
+  color: var(--text-lo); font-style: italic;
+}
+
+/* ══════════════════════════════════════════════
+   FLASH & TOAST
+══════════════════════════════════════════════ */
+.flash-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 999;
+  height: 2px; background: var(--red);
+  transform: scaleX(0); transform-origin: left; transition: transform .2s;
+  box-shadow: 0 0 8px var(--red);
+}
+.flash-bar.show { transform: scaleX(1); }
+.flash-bar.gold { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
+
+.toast-wrap {
+  position: fixed; bottom: 28px; right: 28px; z-index: 500;
+  display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+}
+.toast-item {
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  border-left: 3px solid var(--glow-hi);
+  padding: 12px 18px 12px 16px; border-radius: 1px;
+  font-family: var(--serif); font-size: 12px; letter-spacing: 1px;
+  color: var(--text-hi);
+  animation: toast-in .3s ease forwards;
+}
+.toast-item.warn   { border-left-color: var(--gold); }
+.toast-item.danger { border-left-color: var(--red); }
+@keyframes toast-in { from{opacity:0;transform:translateX(12px)} to{opacity:1;transform:translateX(0)} }
+
+/* Stagger entries */
+.feed-pane   { animation: rise .5s ease both; }
+.stats-pane  { animation: rise .5s .08s ease both; }
+.history-pane{ animation: rise .5s .16s ease both; }
+@keyframes rise { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+</style>
+</head>
+<body>
+
+<!-- SVG gradient defs (inline, reused by ring strokes) -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="calibGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#7c3aed"/>
+      <stop offset="100%" stop-color="#e879f9"/>
+    </linearGradient>
+    <linearGradient id="pomoGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"   stop-color="#7c3aed"/>
+      <stop offset="50%"  stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#e879f9"/>
+    </linearGradient>
+  </defs>
+</svg>
+
+<div class="flash-bar" id="flashBar"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<!-- ══ PAGE FRAME ══ -->
+<div class="page-frame">
+<div class="page-border">
+
+  <!-- Corner ornaments -->
+  <div class="corner corner-tl"><svg viewBox="0 0 36 36" fill="none"><path d="M2 34 L2 2 L34 2" stroke="#7c3aed" stroke-width="1.5"/><circle cx="2" cy="2" r="2.5" fill="#a855f7"/><path d="M8 2 L14 8 M2 8 L8 14" stroke="#4a2f90" stroke-width="1"/></svg></div>
+  <div class="corner corner-tr"><svg viewBox="0 0 36 36" fill="none"><path d="M2 34 L2 2 L34 2" stroke="#7c3aed" stroke-width="1.5"/><circle cx="2" cy="2" r="2.5" fill="#a855f7"/><path d="M8 2 L14 8 M2 8 L8 14" stroke="#4a2f90" stroke-width="1"/></svg></div>
+  <div class="corner corner-bl"><svg viewBox="0 0 36 36" fill="none"><path d="M2 34 L2 2 L34 2" stroke="#7c3aed" stroke-width="1.5"/><circle cx="2" cy="2" r="2.5" fill="#a855f7"/><path d="M8 2 L14 8 M2 8 L8 14" stroke="#4a2f90" stroke-width="1"/></svg></div>
+  <div class="corner corner-br"><svg viewBox="0 0 36 36" fill="none"><path d="M2 34 L2 2 L34 2" stroke="#7c3aed" stroke-width="1.5"/><circle cx="2" cy="2" r="2.5" fill="#a855f7"/><path d="M8 2 L14 8 M2 8 L8 14" stroke="#4a2f90" stroke-width="1"/></svg></div>
+
+  <!-- ══ HEADER ══ -->
+  <div class="hdr">
+    <div class="status-rune">
+      <div class="rune-gem" id="runeGem"></div>
+      <div class="rune-label">Status</div>
+      <div class="rune-value" id="runeStatus">Dormant</div>
+    </div>
+
+    <div class="title-block">
+      <div class="title-eyebrow">Arcane Study Suite</div>
+      <div class="title-main">FocusFlow</div>
+      <div class="title-sub">Attention & Posture Monitor</div>
+    </div>
+
+    <div class="hdr-btns">
+      <button class="btn btn-cast" id="btnStart" onclick="startSession()">✦ Begin Session</button>
+      <button class="btn btn-cancel" id="btnStop" onclick="stopSession()" disabled>✕ End Session</button>
+    </div>
+  </div>
+
+  <!-- ══ MAIN GRIMOIRE ══ -->
+  <div class="grimoire">
+
+    <!-- LEFT: FEED -->
+    <div class="feed-pane">
+      <div class="section-header">
+        <div class="section-title">Scrying Mirror</div>
+        <div style="font-family:var(--serif);font-size:9px;letter-spacing:2px;color:var(--text-lo)" id="feedMeta">INACTIVE</div>
+      </div>
+
+      <div class="feed-wrap" id="feedWrap">
+        <div class="feed-br"></div>
+        <div class="feed-inactive" id="feedInactive">
+          <div class="feed-inactive-glyph">◈</div>
+          <div class="feed-inactive-text">Awaiting activation</div>
+        </div>
+        <img id="videoFeed" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover">
+
+        <!-- Calibration overlay -->
+        <div id="calibOverlay">
+          <div class="calib-title">Attuning to Your Form</div>
+          <div class="calib-arc">
+            <svg width="130" height="130" viewBox="0 0 130 130">
+              <circle class="ca-bg"   cx="65" cy="65" r="56"/>
+              <circle class="ca-fill" cx="65" cy="65" r="56" id="calibArcFill"/>
+            </svg>
+            <div class="calib-arc-inner">
+              <div class="calib-num" id="calibPct">0%</div>
+              <div class="calib-lbl">CALIBRATING</div>
+            </div>
+          </div>
+          <div class="calib-sub">
+            Sit naturally and gaze at your screen.<br>
+            The system learns your unique posture signature.
+          </div>
+          <div class="calib-samples" id="calibSamples">0 runes inscribed</div>
+        </div>
+      </div>
+
+      <div class="hud-strip">
+        <div class="hud-item"><div class="hud-label">Gaze Link</div><div class="hud-val" id="hudGaze">Offline</div></div>
+        <div class="hud-item"><div class="hud-label">Baseline</div><div class="hud-val" id="hudBaseline">—</div></div>
+        <div class="hud-item"><div class="hud-label">Threshold</div><div class="hud-val" id="hudThreshold">—</div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: STATS -->
+    <div class="stats-pane">
+
+      <!-- Focus Score -->
+      <div class="score-block">
+        <div class="section-header" style="padding:0 0 14px;border:none">
+          <div class="section-title">Focus Power</div>
+        </div>
+        <div class="score-row">
+          <div class="score-numeral" id="scoreNum">—<span class="score-unit"></span></div>
+          <div class="score-right">
+            <div class="score-grade" id="gradeNum">—</div>
+            <div class="score-grade-label">Grade</div>
+          </div>
+        </div>
+        <div class="xp-label">Experience Bar</div>
+        <div class="xp-track" id="xpTrack">
+          <div class="xp-fill" id="xpFill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <!-- Pomodoro -->
+      <div class="pomo-block">
+        <div class="section-header" style="padding:0 0 14px;border:none">
+          <div class="section-title">Arcane Timer</div>
+        </div>
+        <div class="pomo-layout">
+          <div class="pomo-ring-wrap">
+            <svg width="96" height="96" viewBox="0 0 96 96">
+              <circle class="pr-bg"   cx="48" cy="48" r="42"/>
+              <circle class="pr-fill" cx="48" cy="48" r="42" id="pomoRing"/>
+            </svg>
+            <div class="pr-inner">
+              <div class="pr-pct" id="pomoPct">0%</div>
+              <div class="pr-sub">FOCUS</div>
+            </div>
+          </div>
+          <div class="pomo-info">
+            <div class="pomo-time" id="pomoTime">25:00</div>
+            <div class="pomo-time-sub">Clean time remaining</div>
+            <div class="tomato-row">
+              <div id="pomoTomatoes"></div>
+              <span class="pomo-count-lbl" id="pomoDone">0 completed</span>
+            </div>
+          </div>
+        </div>
+        <div class="break-strip" id="breakStrip">⚜ Rest, Adventurer — You Earned It ⚜</div>
+      </div>
+
+      <!-- Meta -->
+      <div class="meta-block">
+        <div class="meta-item">
+          <div class="meta-label">Gaze Tracking</div>
+          <div class="meta-val" id="metaGaze">Offline</div>
+          <div class="meta-sub" id="metaGazeSub">Session not started</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Posture Baseline</div>
+          <div class="meta-val" id="metaBaseline">—</div>
+          <div class="meta-sub" id="metaBaselineSub">Awaiting calibration</div>
+        </div>
+      </div>
+
+      <!-- Counters -->
+      <div class="counters-block">
+        <div class="counter-cell" id="cellPhone">
+          <div class="counter-icon">📱</div>
+          <div class="counter-label">Phone</div>
+          <div class="counter-num cn-phone" id="phoneNum">0</div>
+        </div>
+        <div class="counter-cell" id="cellPosture">
+          <div class="counter-icon">🪑</div>
+          <div class="counter-label">Posture</div>
+          <div class="counter-num cn-posture" id="postureNum">0</div>
+        </div>
+        <div class="counter-cell">
+          <div class="counter-icon">⏳</div>
+          <div class="counter-label">Time</div>
+          <div class="counter-num cn-time" id="timeNum">0:00</div>
+        </div>
+      </div>
+
+    </div><!-- /stats-pane -->
+
+  </div><!-- /grimoire -->
+
+  <!-- ══ HISTORY ══ -->
+  <div class="history-pane">
+    <div class="section-header" style="padding:0 0 16px;border:none">
+      <div class="section-title">Chronicle of Sessions</div>
+    </div>
+    <div id="historyContainer">
+      <div class="empty-lore">No sessions recorded yet. Begin your first session above.</div>
+    </div>
+  </div>
+
+</div><!-- /page-border -->
+</div><!-- /page-frame -->
+
+<script>
+const socket = io();
+let running = false, feedShown = false, lastPhone = 0, lastPosture = 0, lastPomodoros = 0;
+const POMO_C = 263.9, CALIB_C = 351.9;
+
+function showFeed(baseline) {
+  if (feedShown) return;
+  feedShown = true;
+  document.getElementById('videoFeed').style.display    = 'block';
+  document.getElementById('feedInactive').style.display = 'none';
+  // calibOverlay lives inside feedWrap — hide it too
+  document.getElementById('calibOverlay').style.display = 'none';
+  if (baseline != null) {
+    const b = +baseline, t = (b * 0.85).toFixed(3);
+    document.getElementById('hudBaseline').textContent      = b.toFixed(3);
+    document.getElementById('hudThreshold').textContent     = t;
+    document.getElementById('metaBaseline').textContent     = b.toFixed(3);
+    document.getElementById('metaBaselineSub').textContent  = 'threshold ' + t;
+  }
+  document.getElementById('hudGaze').textContent     = 'Active';
+  document.getElementById('metaGaze').textContent    = 'Active';
+  document.getElementById('metaGaze').classList.add('active');
+  document.getElementById('metaGazeSub').textContent = 'Phone alert requires eye contact';
+}
+
+// ── SOCKET STATE ──────────────────────────────────────────────────────────────
+socket.on('state', s => {
+  // NOTE: do NOT guard calibrating phase with !running — 
+  // running is set true in startSession() but calibration updates
+  // arrive immediately. Check phase first.
+  const phase = s.phase ?? 'focusing';
+
+  if (phase === 'loading') {
+    document.getElementById('calibPct').textContent = 'Loading...';
+    document.getElementById('calibSamples').textContent = 'Summoning AI models — please wait';
+    setStatus('LOADING', 'grey');
+    return;
+  }
+
+  if (phase === 'calibrating') {
+    const pct = Math.max(0, Math.min(100, s.calibration_pct ?? 0));
+    document.getElementById('calibPct').textContent = pct + '%';
+    document.getElementById('calibArcFill').style.strokeDashoffset =
+      CALIB_C * (1 - pct / 100);
+    const approxSamples = Math.round(pct * 0.6);
+    document.getElementById('calibSamples').textContent = approxSamples + ' runes inscribed';
+    setStatus('CALIBRATING', 'grey');
+    return;
+  }
+
+  if (!running) return;
+
+  // Show feed the first time we leave calibration
+  if (!feedShown) showFeed(s.posture_baseline);
+
+  // Transition out of calibration
+  if (document.getElementById('calibOverlay').style.display !== 'none') {
+    document.getElementById('calibOverlay').style.display = 'none';
+  }
+
+  // Score
+  const score = s.focus_score ?? 0;
+  const sEl   = document.getElementById('scoreNum');
+  sEl.innerHTML = score + '<span class="score-unit">%</span>';
+  sEl.className = 'score-numeral' + (score < 40 ? ' danger' : score < 70 ? ' warn' : '');
+
+  const xpTrack = document.getElementById('xpTrack');
+  xpTrack.className = 'xp-track' + (score < 40 ? ' danger' : score < 70 ? ' warn' : '');
+  document.getElementById('xpFill').style.width = score + '%';
+
+  const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 50 ? 'C' : 'F';
+  const gEl   = document.getElementById('gradeNum');
+  gEl.textContent = grade;
+  gEl.className   = 'score-grade ' + (score >= 70 ? 'sg-good' : score >= 50 ? 'sg-ok' : score >= 30 ? 'sg-warn' : 'sg-danger');
+
+  // Counters
+  document.getElementById('phoneNum').textContent   = s.phone_alerts   ?? 0;
+  document.getElementById('postureNum').textContent = s.posture_alerts ?? 0;
+  const m = Math.floor(s.session_mins ?? 0), sec = Math.round(((s.session_mins ?? 0) - m) * 60);
+  document.getElementById('timeNum').textContent = m + ':' + String(sec).padStart(2, '0');
+
+  // Pomodoro ring
+  const ps = s.pomodoro_secs ?? 0, pt = s.pomodoro_target ?? 1500;
+  const pct = Math.min(ps / pt, 1);
+  document.getElementById('pomoRing').style.strokeDashoffset = POMO_C - pct * POMO_C;
+  document.getElementById('pomoPct').textContent  = Math.round(pct * 100) + '%';
+  const sl = Math.max(pt - ps, 0), pm = Math.floor(sl / 60), pss = sl % 60;
+  document.getElementById('pomoTime').textContent = pm + ':' + String(pss).padStart(2,'0');
+  const done = s.pomodoros_done ?? 0;
+  document.getElementById('pomoDone').textContent     = done + ' completed';
+  document.getElementById('pomoTomatoes').textContent = '🍅'.repeat(Math.min(done, 8));
+  document.getElementById('breakStrip').style.display = phase === 'break' ? 'block' : 'none';
+
+  // Status gem
+  const stMap = {
+    'PRODUCTIVE':     ['Active',         'purple'],
+    'PHONE DETECTED': ['Phone Detected', 'red'],
+    'POSTURE ALERT':  ['Posture Alert',  'gold'],
+    'USER AWAY':      ['Away',           'grey'],
+    'STOPPED':        ['Dormant',        'grey'],
+    'LOADING':        ['Loading',        'grey'],
+    'CALIBRATING':    ['Calibrating',    'grey'],
+  };
+  const [label, color] = stMap[s.status] ?? ['Active', 'purple'];
+  setStatus(label, color);
+  document.getElementById('feedMeta').textContent = s.status ?? 'ACTIVE';
+
+  // Flash alerts
+  if ((s.phone_alerts ?? 0) > lastPhone)     { flashBar(false); flashCell('cellPhone'); addToast('⚠ Phone Detected', 'danger'); }
+  if ((s.posture_alerts ?? 0) > lastPosture) { flashBar(true);  flashCell('cellPosture'); addToast('⚠ Posture Alert', 'warn'); }
+  if ((s.pomodoros_done ?? 0) > lastPomodoros) addToast('🍅 Pomodoro Complete! Rest now.', '');
+  lastPhone    = s.phone_alerts   ?? 0;
+  lastPosture  = s.posture_alerts ?? 0;
+  lastPomodoros= s.pomodoros_done ?? 0;
+
+  if (s.status === 'STOPPED') setRunning(false);
+});
+
+socket.on('session_saved', () => { addToast('✦ Session saved to chronicle', ''); loadHistory(); });
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function setStatus(label, color) {
+  document.getElementById('runeStatus').textContent = label;
+  const gem = document.getElementById('runeGem');
+  gem.className = 'rune-gem' + (color === 'red' ? ' red' : color === 'gold' ? ' gold' : color === 'grey' ? ' grey' : '');
+}
+
+async function startSession() {
+  running = true;
+  feedShown = false;
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('calibOverlay').style.display = 'flex';
+  document.getElementById('videoFeed').style.display    = 'none';
+  document.getElementById('videoFeed').src              = '/video_feed';
+  document.getElementById('feedInactive').style.display = 'none';
+  setStatus('Calibrating', 'grey');
+
+  const res = await fetch('/api/start', { method: 'POST' });
+  const d   = await res.json();
+  if (!d.ok) {
+    running = false;
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnStop').disabled  = true;
+    document.getElementById('calibOverlay').style.display = 'none';
+    document.getElementById('feedInactive').style.display = 'flex';
+    setStatus('Dormant', 'grey');
+    addToast(d.msg || 'Could not start', 'danger');
+  }
+}
+
+async function stopSession() {
+  await fetch('/api/stop', { method: 'POST' });
+  setRunning(false);
+}
+
+function setRunning(on) {
+  running = on;
+  if (!on) feedShown = false;
+  document.getElementById('btnStart').disabled = on;
+  document.getElementById('btnStop').disabled  = !on;
+  if (!on) {
+    document.getElementById('videoFeed').style.display    = 'none';
+    document.getElementById('feedInactive').style.display = 'flex';
+    document.getElementById('calibOverlay').style.display = 'none';
+    document.getElementById('scoreNum').innerHTML = '—';
+    document.getElementById('scoreNum').className = 'score-numeral';
+    setStatus('Dormant', 'grey');
+    document.getElementById('hudGaze').textContent = 'Offline';
+    document.getElementById('metaGaze').textContent = 'Offline';
+    document.getElementById('metaGaze').classList.remove('active');
+  }
+}
+
+let flashTimer;
+function flashBar(isGold) {
+  const el = document.getElementById('flashBar');
+  el.className = 'flash-bar show' + (isGold ? ' gold' : '');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => el.className = 'flash-bar', 700);
+}
+
+function flashCell(id) {
+  const el = document.getElementById(id);
+  const cls = id === 'cellPhone' ? 'flash-phone' : 'flash-posture';
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), 1200);
+}
+
+function addToast(msg, type) {
+  const wrap = document.getElementById('toastWrap');
+  const el   = document.createElement('div');
+  el.className = 'toast-item ' + (type || '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+async function loadHistory() {
+  const data = await (await fetch('/api/history')).json();
+  const c    = document.getElementById('historyContainer');
+  if (!data.length) { c.innerHTML = '<div class="empty-lore">No sessions recorded yet. Begin your first session above.</div>'; return; }
+  const gc = { 'A+': 'gAp', A: 'gA', B: 'gB', C: 'gC', F: 'gF' };
+  c.innerHTML = `<table>
+    <thead><tr>
+      <th>Date</th><th>Duration</th><th>Grade</th>
+      <th>Focus Score</th><th>Phone Incidents</th><th>Posture Warnings</th>
+    </tr></thead>
+    <tbody>${data.map(s => `<tr>
+      <td>${s.date}</td>
+      <td>${s.duration_mins} min</td>
+      <td><span class="grade-rune ${gc[s.grade] ?? ''}">${s.grade}</span></td>
+      <td>${s.focus_score}%</td>
+      <td style="color:var(--red)">${s.phone_count}</td>
+      <td style="color:var(--gold)">${s.posture_count}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+loadHistory();
+</script>
+</body>
+</html>
