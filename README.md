@@ -185,8 +185,4 @@ EAR = (dist(p2,p6) + dist(p3,p5)) / (2 * dist(p1,p4))
 **Aditi Jha** — B.Tech CSE (AIML), Manipal University Jaipur  
 **Akshita Sai Pery** — B.Tech CSE, Manipal University Jaipur  
 
----
 
-## 📄 License
-
-MIT License — free to use, modify, and distribute with attribution.
