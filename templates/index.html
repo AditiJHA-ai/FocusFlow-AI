@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FocusFlow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baskervville:ital@0;1&family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --leather:      #7B4B3A;
+  --leather-soft: rgba(123,75,58,0.65);
+  --leather-dim:  rgba(123,75,58,0.14);
+  --ink:          #5F4C3E;
+  --ink-dim:      rgba(95,76,62,0.5);
+  --parchment:    #F4E3D7;
+  --panel:        #D6CFC4;
+  --stone:        #A89F91;
+  --stone-dim:    rgba(168,159,145,0.4);
+
+  --display: 'Baskervville', serif;
+  --body:    'EB Garamond', serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 16px; }
+
+body {
+  background:
+    repeating-linear-gradient(91deg, rgba(0,0,0,0.05) 0px, rgba(0,0,0,0.05) 1px, transparent 1px, transparent 3px),
+    repeating-linear-gradient(91deg, rgba(0,0,0,0.09) 0px, rgba(0,0,0,0.09) 2px, transparent 2px, transparent 11px),
+    repeating-linear-gradient(91deg, rgba(244,227,215,0.05) 0px, transparent 1px, transparent 17px),
+    radial-gradient(ellipse 280px 45px at 18% 22%, rgba(0,0,0,0.16) 0%, transparent 75%),
+    radial-gradient(ellipse 320px 40px at 74% 66%, rgba(0,0,0,0.14) 0%, transparent 75%),
+    radial-gradient(ellipse 200px 30px at 42% 85%, rgba(0,0,0,0.10) 0%, transparent 75%),
+    radial-gradient(ellipse 130% 90% at 50% -10%, rgba(244,227,215,0.06) 0%, transparent 55%),
+    linear-gradient(93deg, var(--leather) 0%, var(--ink) 65%, var(--ink) 100%);
+  color: var(--ink);
+  font-family: var(--body);
+  font-size: 16px;
+  line-height: 1.5;
+  min-height: 100vh;
+  padding: 34px 16px;
+}
+
+.paper-texture {
+  background-color: var(--parchment);
+  background-image:
+    radial-gradient(circle at 12% 18%, rgba(123,75,58,0.07) 0%, transparent 9%),
+    radial-gradient(circle at 82% 12%, rgba(95,76,62,0.06) 0%, transparent 7%),
+    radial-gradient(circle at 88% 70%, rgba(123,75,58,0.06) 0%, transparent 10%),
+    radial-gradient(circle at 25% 85%, rgba(95,76,62,0.05) 0%, transparent 11%),
+    radial-gradient(circle at 55% 45%, rgba(123,75,58,0.04) 0%, transparent 14%),
+    radial-gradient(circle at 40% 8%, rgba(95,76,62,0.05) 0%, transparent 6%),
+    radial-gradient(rgba(95,76,62,0.09) 0.7px, transparent 0.7px);
+  background-size: auto, auto, auto, auto, auto, auto, 3px 3px;
+}
+
+/* ══════════════════════════════════════════════
+   HARDCOVER — wraps the whole book, with a
+   stacked-page edge peeking out on the right/bottom
+══════════════════════════════════════════════ */
+.book-cover {
+  max-width: 1200px; margin: 0 auto;
+  position: relative;
+  background: var(--leather);
+  padding: 14px 18px 20px 14px;
+  border-radius: 5px;
+  box-shadow:
+    0 30px 60px rgba(0,0,0,0.5),
+    inset 0 1px 1px rgba(244,227,215,0.18),
+    inset 0 -3px 6px rgba(0,0,0,0.3);
+}
+
+/* stacked page edge — right side */
+.book-cover::before {
+  content: '';
+  position: absolute; top: 10px; bottom: 16px; right: 4px; width: 11px;
+  background: repeating-linear-gradient(to bottom,
+    var(--parchment) 0 6px, rgba(168,159,145,0.55) 6px 7px);
+  border-radius: 0 3px 3px 0;
+  box-shadow: 1px 0 2px rgba(0,0,0,0.2), inset -2px 0 3px rgba(95,76,62,0.15);
+}
+/* stacked page edge — bottom */
+.book-cover::after {
+  content: '';
+  position: absolute; left: 10px; right: 18px; bottom: 4px; height: 11px;
+  background: repeating-linear-gradient(to right,
+    var(--parchment) 0 6px, rgba(168,159,145,0.55) 6px 7px);
+  border-radius: 0 0 3px 3px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2), inset 0 -2px 3px rgba(95,76,62,0.15);
+}
+
+.book-wrap {
+  position: relative; z-index: 1;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+}
+
+/* ── HEADER ── */
+.hdr {
+  padding: 20px 32px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 2px solid var(--leather);
+}
+.title-block { text-align: center; flex: 1; }
+.title-eyebrow { font-family: var(--body); font-size: 11px; letter-spacing: 3px; text-transform: uppercase; color: var(--stone); font-style: italic; margin-bottom: 5px; }
+.title-main { font-family: var(--display); font-size: 30px; color: var(--ink); }
+.title-sub { font-family: var(--body); font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--stone); font-style: italic; margin-top: 5px; }
+
+.status-block { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 120px; }
+.status-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ink); border: 1px solid var(--stone); }
+.status-dot.red  { background: var(--leather); }
+.status-dot.gold { background: var(--leather-soft); }
+.status-dot.grey { background: var(--stone); }
+.status-label { font-family: var(--body); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--stone); font-style: italic; }
+.status-value { font-family: var(--display); font-size: 13px; color: var(--ink); font-style: italic; }
+
+.hdr-btns { display: flex; flex-direction: column; gap: 8px; min-width: 120px; align-items: flex-end; }
+.btn { font-family: var(--body); font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; padding: 8px 18px; cursor: pointer; transition: opacity .15s; }
+.btn-cast   { background: var(--leather); color: var(--parchment); border: 1px solid var(--leather); }
+.btn-cast:hover { opacity: 0.88; }
+.btn-cancel { background: transparent; color: var(--leather); border: 1px solid var(--leather); }
+.btn-cancel:hover { background: var(--leather-dim); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+/* ── TAB BAR ── */
+.tab-bar { display: flex; background: var(--leather); padding: 0 20px; gap: 2px; }
+.tab-btn {
+  border: none; background: transparent; cursor: pointer;
+  font-family: var(--body); font-size: 12px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--parchment); padding: 12px 20px 10px;
+  border-top: 3px solid transparent;
+  transition: background .15s, transform .15s;
+}
+.tab-btn:hover { background: rgba(244,227,215,0.1); }
+.tab-btn.active {
+  background: var(--parchment);
+  color: var(--leather);
+  font-weight: 600;
+  border-top: 3px solid var(--ink);
+  transform: translateY(-2px);
+}
+
+/* ── SPREAD ── */
+.spread { position: relative; display: flex; }
+.page { flex: 1; min-width: 0; position: relative; padding: 26px 30px 30px; display: flex; flex-direction: column; }
+
+.spread::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 50%;
+  width: 64px; margin-left: -32px; z-index: 5; pointer-events: none;
+  background: linear-gradient(to right,
+    transparent 0%, rgba(0,0,0,0.10) 38%, rgba(0,0,0,0.22) 50%,
+    rgba(0,0,0,0.10) 62%, transparent 100%);
+}
+.spread::after {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 50%;
+  width: 1px; background: rgba(0,0,0,0.25); z-index: 5;
+}
+
+/* LEFT PAGE — figure */
+.feed-wrap { position: relative; background: var(--ink); aspect-ratio: 16/11; overflow: hidden; flex-shrink: 0; }
+#videoFeed { width: 100%; height: 100%; object-fit: cover; display: block; }
+.feed-inactive { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
+.feed-inactive-glyph svg { width: 34px; height: 34px; opacity: 0.4; }
+.feed-inactive-text { font-family: var(--body); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--parchment); opacity: 0.6; font-style: italic; }
+
+#calibOverlay {
+  display: none; position: absolute; inset: 0; z-index: 20;
+  background: rgba(52,40,32,0.94);
+  flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 30px;
+}
+.calib-title { font-family: var(--display); font-size: 18px; font-style: italic; color: var(--parchment); }
+.calib-sub { font-family: var(--body); font-size: 13px; color: var(--panel); text-align: center; line-height: 1.7; opacity: 0.85; }
+.calib-arc { position: relative; width: 100px; height: 100px; }
+.calib-arc svg { transform: rotate(-90deg); }
+.ca-bg   { fill: none; stroke: rgba(214,207,196,0.2); stroke-width: 3; }
+.ca-fill { fill: none; stroke: var(--parchment); stroke-width: 3; stroke-linecap: round; stroke-dasharray: 289; stroke-dashoffset: 289; transition: stroke-dashoffset .5s ease; }
+.calib-arc-inner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.calib-num { font-family: var(--display); font-size: 22px; color: var(--parchment); }
+.calib-samples { font-family: var(--body); font-size: 11px; color: var(--panel); font-style: italic; opacity: 0.7; }
+
+.fig-caption { margin-top: 14px; text-align: center; font-family: var(--display); font-size: 13px; font-style: italic; color: var(--ink); }
+.hud-footnote {
+  margin-top: 10px; padding-top: 10px; padding-bottom: 14px; border-bottom: 1px solid var(--stone-dim);
+  text-align: center; font-family: var(--body); font-size: 12px; font-style: italic; color: var(--stone);
+}
+.hud-footnote b { color: var(--ink); font-style: normal; font-weight: 600; }
+.hud-footnote .sep { margin: 0 10px; color: var(--stone); }
+
+/* To-Do, styled as a sticky note pinned to the left page */
+.section-heading {
+  font-family: var(--body); font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--stone); font-style: italic; margin: 18px 0 10px;
+}
+.todo-sticky {
+  background: var(--panel);
+  padding: 18px 18px 22px;
+  margin: 4px 6px 10px;
+  transform: rotate(-0.8deg);
+  box-shadow: 3px 7px 14px rgba(0,0,0,0.22), 0 1px 0 rgba(255,255,255,0.15) inset;
+  position: relative;
+}
+.todo-sticky::before {
+  /* pushpin */
+  content: '';
+  position: absolute; top: -9px; left: 50%; margin-left: -6px;
+  width: 12px; height: 12px; border-radius: 50%;
+  background: var(--leather);
+  box-shadow: 0 2px 3px rgba(0,0,0,0.35), inset 0 1px 1px rgba(244,227,215,0.4);
+}
+.todo-sticky::after {
+  /* dog-eared corner fold */
+  content: '';
+  position: absolute; right: 0; bottom: 0; width: 0; height: 0;
+  border-style: solid; border-width: 0 0 16px 16px;
+  border-color: transparent transparent rgba(95,76,62,0.25) transparent;
+}
+.todo-note { font-family: var(--body); font-size: 11px; font-style: italic; color: var(--ink-dim); margin-bottom: 12px; }
+.todo-input-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.todo-input { flex: 1; background: var(--parchment); border: 1px solid var(--stone); color: var(--ink); font-family: var(--body); font-size: 14px; padding: 8px 12px; outline: none; }
+.todo-input::placeholder { color: var(--stone); font-style: italic; }
+.todo-input:focus { border-color: var(--leather); }
+.todo-list { display: flex; flex-direction: column; gap: 6px; }
+.todo-item { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--stone-dim); background: var(--parchment); }
+.todo-check { width: 14px; height: 14px; border: 1px solid var(--leather); border-radius: 50%; cursor: pointer; flex-shrink: 0; }
+.todo-check.done { background: var(--leather); }
+.todo-text { flex: 1; font-family: var(--body); font-size: 13px; color: var(--ink); }
+.todo-text.done { color: var(--stone); text-decoration: line-through; }
+.todo-del { cursor: pointer; color: var(--stone); font-family: var(--body); font-size: 10px; letter-spacing: 1px; font-style: italic; }
+.todo-del:hover { color: var(--leather); }
+
+/* RIGHT PAGE — stats */
+.rail-block { padding: 16px 0; border-bottom: 1px solid var(--stone-dim); }
+.rail-block:first-child { padding-top: 0; }
+.rail-heading { font-family: var(--body); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--stone); font-style: italic; margin-bottom: 10px; }
+
+.score-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.score-numeral { font-family: var(--display); font-size: 46px; color: var(--ink); line-height: 1; }
+.score-numeral .unit { font-size: 18px; }
+.score-numeral.warn   { color: var(--leather-soft); font-style: italic; }
+.score-numeral.danger { color: var(--leather); letter-spacing: 0.5px; }
+
+.wax-seal {
+  width: 46px; height: 46px; border-radius: 50%; background: var(--leather);
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--display); font-size: 16px; color: var(--parchment);
+  box-shadow: inset 0 0 0 2px rgba(244,227,215,0.25), inset 0 2px 4px rgba(0,0,0,0.25);
+  flex-shrink: 0;
+}
+
+.rule-track { height: 2px; background: var(--stone-dim); margin-top: 14px; }
+.rule-fill  { height: 100%; background: var(--leather); width: 0%; transition: width .7s ease; }
+.rule-track.lg { height: 3px; }
+
+.ledger-row { display: flex; align-items: baseline; gap: 6px; font-family: var(--body); font-size: 14px; color: var(--ink); padding: 6px 0; }
+.ledger-row .lbl { white-space: nowrap; display: flex; align-items: center; gap: 6px; }
+.ledger-row .lbl svg { width: 12px; height: 12px; opacity: 0.6; flex-shrink: 0; }
+.ledger-row .dots { flex: 1; border-bottom: 1px dotted var(--stone); margin-bottom: 3px; }
+.ledger-row .val { font-family: var(--display); }
+.ledger-row.phone .val   { color: var(--leather); }
+.ledger-row.posture .val { color: var(--leather-soft); }
+.ledger-row.time .val    { color: var(--ink); }
+
+/* Timer, on the right page beneath the ledger */
+.timer-big { font-family: var(--display); font-size: 38px; color: var(--ink); }
+.timer-pct { font-family: var(--body); font-style: italic; color: var(--stone); font-size: 12px; margin: 4px 0 12px; }
+.timer-stat-row { display: flex; justify-content: space-between; padding: 7px 0; border-bottom: 1px solid var(--stone-dim); font-size: 13px; }
+.timer-stat-row:last-child { border-bottom: none; }
+.timer-stat-row b { font-family: var(--display); font-style: italic; color: var(--ink); }
+
+/* ── OVERLAY PANEL ── */
+.slide-panel {
+  position: absolute; inset: 0; z-index: 30;
+  transform: translateX(100%);
+  transition: transform 0.28s ease;
+  display: flex; flex-direction: column;
+}
+.slide-panel.open { transform: translateX(0); }
+
+.panel-header { padding: 18px 32px; border-bottom: 2px solid var(--leather); display: flex; align-items: center; justify-content: space-between; background: var(--parchment); }
+.panel-title { font-family: var(--display); font-size: 18px; font-style: italic; color: var(--ink); }
+.panel-close { font-family: var(--body); font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--stone); cursor: pointer; font-style: italic; }
+.panel-close:hover { color: var(--leather); }
+
+.panel-body { flex: 1; overflow-y: auto; padding: 24px 32px; }
+.panel-section { display: none; max-width: 640px; margin: 0 auto; }
+.panel-section.active { display: block; }
+
+.empty-lore { text-align: center; padding: 30px 0; font-family: var(--body); font-size: 13px; color: var(--stone); font-style: italic; }
+
+table { width: 100%; border-collapse: collapse; }
+thead th { font-family: var(--body); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--stone); font-style: italic; text-align: left; padding: 0 8px 8px; border-bottom: 1px solid var(--leather); }
+tbody tr { border-bottom: 1px solid var(--stone-dim); }
+tbody tr:last-child { border-bottom: none; }
+td { padding: 10px 8px; font-size: 14px; color: var(--ink); }
+td:first-child { font-family: var(--display); font-style: italic; }
+.grade-seal { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; background: var(--leather); color: var(--parchment); font-family: var(--display); font-size: 10px; }
+
+.profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.profile-stat { border: 1px solid var(--stone-dim); padding: 18px; text-align: center; }
+.profile-num { font-family: var(--display); font-size: 30px; color: var(--ink); }
+.profile-lbl { font-family: var(--body); font-size: 10px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--stone); font-style: italic; margin-top: 6px; }
+
+.settings-row { padding: 14px 0; border-bottom: 1px solid var(--stone-dim); }
+.settings-label { font-family: var(--display); font-size: 14px; font-style: italic; color: var(--ink); margin-bottom: 8px; }
+.settings-select { width: 100%; background: var(--panel); border: 1px solid var(--stone); color: var(--ink); font-family: var(--body); font-size: 13px; padding: 7px 10px; }
+.settings-note { font-family: var(--body); font-size: 12px; font-style: italic; color: var(--stone); margin-top: 20px; padding: 10px 12px; border-left: 2px solid var(--stone); }
+
+/* ══ FLASH & TOAST ══ */
+.flash-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 999; height: 2px; background: var(--leather); transform: scaleX(0); transform-origin: left; transition: transform .2s; }
+.flash-bar.show { transform: scaleX(1); }
+.flash-bar.gold { background: var(--leather-soft); }
+.toast-wrap { position: fixed; bottom: 26px; right: 26px; z-index: 500; display: flex; flex-direction: column; gap: 9px; align-items: flex-end; }
+.toast-item { background: var(--parchment); border: 1px solid var(--stone); border-left: 3px solid var(--leather); padding: 11px 16px; font-family: var(--body); font-size: 13px; color: var(--ink); box-shadow: 0 6px 14px rgba(0,0,0,0.25); }
+.toast-item.warn { border-left-color: var(--leather-soft); }
+
+@media (max-width: 860px) {
+  .spread { flex-direction: column; }
+  .spread::before, .spread::after { display: none; }
+  .tab-bar { flex-wrap: wrap; }
+}
+</style>
+</head>
+<body>
+
+<div class="flash-bar" id="flashBar"></div>
+<div class="toast-wrap" id="toastWrap"></div>
+
+<div class="book-cover">
+<div class="book-wrap">
+
+  <div class="hdr paper-texture">
+    <div class="status-block">
+      <div class="status-dot" id="runeGem"></div>
+      <div class="status-label">Status</div>
+      <div class="status-value" id="runeStatus">Idle</div>
+    </div>
+    <div class="title-block">
+      <div class="title-eyebrow">A Study Companion</div>
+      <div class="title-main">FocusFlow</div>
+      <div class="title-sub">Attention &amp; Posture Journal</div>
+    </div>
+    <div class="hdr-btns">
+      <button class="btn btn-cast" id="btnStart" onclick="startSession()">Begin Session</button>
+      <button class="btn btn-cancel" id="btnStop" onclick="stopSession()" disabled>End Session</button>
+    </div>
+  </div>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="home" onclick="openTab('home')">Main Page</button>
+    <button class="tab-btn" data-tab="chronicle" onclick="openTab('chronicle')">Chronicle</button>
+    <button class="tab-btn" data-tab="profile" onclick="openTab('profile')">Profile</button>
+    <button class="tab-btn" data-tab="settings" onclick="openTab('settings')">Settings</button>
+  </div>
+
+  <div class="spread">
+
+    <!-- LEFT PAGE -->
+    <div class="page page-left paper-texture">
+      <div class="feed-wrap" id="feedWrap">
+        <div class="feed-inactive" id="feedInactive">
+          <div class="feed-inactive-glyph"><svg viewBox="0 0 40 40" fill="none"><rect x="6" y="12" width="28" height="20" rx="1" stroke="#F4E3D7" stroke-width="1.5"/><circle cx="20" cy="22" r="6" stroke="#F4E3D7" stroke-width="1.5"/><path d="M14 12 L17 7 H23 L26 12" stroke="#F4E3D7" stroke-width="1.5"/></svg></div>
+          <div class="feed-inactive-text">No session in progress</div>
+        </div>
+        <img id="videoFeed" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover">
+
+        <div id="calibOverlay">
+          <div class="calib-title">Calibrating</div>
+          <div class="calib-arc">
+            <svg width="100" height="100" viewBox="0 0 100 100">
+              <circle class="ca-bg"   cx="50" cy="50" r="46"/>
+              <circle class="ca-fill" cx="50" cy="50" r="46" id="calibArcFill"/>
+            </svg>
+            <div class="calib-arc-inner"><div class="calib-num" id="calibPct">0%</div></div>
+          </div>
+          <div class="calib-sub">Sit naturally and look at your screen.<br>This records your ordinary posture as a baseline.</div>
+          <div class="calib-samples" id="calibSamples">0 samples recorded</div>
+        </div>
+      </div>
+
+      <div class="fig-caption" id="feedMeta">Fig. I — Live Observation</div>
+      <div class="hud-footnote">
+        Gaze — <b id="hudGaze">Offline</b><span class="sep">·</span>Baseline — <b id="hudBaseline">—</b><span class="sep">·</span>Threshold — <b id="hudThreshold">—</b>
+      </div>
+
+      <div class="section-heading">To-Do</div>
+      <div class="todo-sticky">
+        <div class="todo-note">Kept only for this visit — not yet saved to the record.</div>
+        <div class="todo-input-row">
+          <input type="text" id="todoInput" class="todo-input" placeholder="Add a task..." onkeydown="if(event.key==='Enter') addTodoLocal()">
+          <button class="btn btn-cast" onclick="addTodoLocal()">Add</button>
+        </div>
+        <div id="todoList" class="todo-list"><div class="empty-lore">No tasks yet.</div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT PAGE -->
+    <div class="page page-right paper-texture">
+      <div class="rail-block">
+        <div class="rail-heading">Focus Score</div>
+        <div class="score-row">
+          <div class="score-numeral" id="scoreNum">—<span class="unit"></span></div>
+          <div class="wax-seal" id="gradeNum">—</div>
+        </div>
+        <div class="rule-track"><div class="rule-fill" id="xpFill" style="width:0%"></div></div>
+      </div>
+
+      <div class="rail-block">
+        <div class="rail-heading">Ledger</div>
+        <div class="ledger-row phone" id="cellPhone">
+          <div class="lbl"><svg viewBox="0 0 24 24" fill="none"><rect x="7" y="2" width="10" height="20" rx="1.5" stroke="#5F4C3E" stroke-width="1.4"/><line x1="10" y1="19" x2="14" y2="19" stroke="#5F4C3E" stroke-width="1.4"/></svg>Phone</div>
+          <div class="dots"></div>
+          <div class="val" id="phoneNum">0</div>
+        </div>
+        <div class="ledger-row posture" id="cellPosture">
+          <div class="lbl"><svg viewBox="0 0 24 24" fill="none"><path d="M7 21V13a5 5 0 0 1 10 0v8" stroke="#5F4C3E" stroke-width="1.4"/><path d="M5 21h14M7 13H4M20 13h-3" stroke="#5F4C3E" stroke-width="1.4"/></svg>Posture</div>
+          <div class="dots"></div>
+          <div class="val" id="postureNum">0</div>
+        </div>
+        <div class="ledger-row time">
+          <div class="lbl"><svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#5F4C3E" stroke-width="1.4"/><path d="M12 7v5l4 2" stroke="#5F4C3E" stroke-width="1.4"/></svg>Time</div>
+          <div class="dots"></div>
+          <div class="val" id="timeNum">0:00</div>
+        </div>
+      </div>
+
+      <div class="rail-block" style="border-bottom:none">
+        <div class="rail-heading">Study Timer</div>
+        <div class="timer-big" id="pomoTime">25:00</div>
+        <div class="timer-pct" id="pomoPct">0% of this session</div>
+        <div class="rule-track lg" style="margin-bottom:14px"><div class="rule-fill" id="pomoRuleFill" style="width:0%"></div></div>
+        <div class="timer-stat-row"><span>Completed today</span><b id="pomoDone">0</b></div>
+        <div class="timer-stat-row"><span>Target duration</span><b id="pomoTarget">25:00</b></div>
+      </div>
+    </div>
+
+    <!-- OVERLAY PANEL -->
+    <div class="slide-panel" id="slidePanel">
+      <div class="panel-header">
+        <div class="panel-title" id="panelTitle">—</div>
+        <div class="panel-close" onclick="closePanel()">Close</div>
+      </div>
+      <div class="panel-body paper-texture">
+
+        <div class="panel-section" data-section="chronicle" id="secChronicle">
+          <div id="historyContainer"><div class="empty-lore">No sessions recorded yet.</div></div>
+        </div>
+
+        <div class="panel-section" data-section="profile" id="secProfile">
+          <div class="profile-grid">
+            <div class="profile-stat"><div class="profile-num" id="profSessions">—</div><div class="profile-lbl">Total Sessions</div></div>
+            <div class="profile-stat"><div class="profile-num" id="profAvg">—</div><div class="profile-lbl">Average Focus</div></div>
+            <div class="profile-stat"><div class="profile-num" id="profBest">—</div><div class="profile-lbl">Best Session</div></div>
+            <div class="profile-stat"><div class="profile-num" id="profMinutes">—</div><div class="profile-lbl">Minutes Studied</div></div>
+          </div>
+        </div>
+
+        <div class="panel-section" data-section="settings" id="secSettings">
+          <div class="settings-row">
+            <div class="settings-label">Reminder Interval</div>
+            <select class="settings-select"><option>Every 25 minutes</option><option>Every 45 minutes</option><option>Every 60 minutes</option></select>
+          </div>
+          <div class="settings-row">
+            <div class="settings-label">Alert Sensitivity</div>
+            <select class="settings-select"><option>Gentle</option><option selected>Standard</option><option>Strict</option></select>
+          </div>
+          <div class="settings-note">Display only for now — these preferences aren't connected to the session yet.</div>
+        </div>
+
+      </div>
+    </div>
+
+  </div><!-- /spread -->
+
+</div><!-- /book-wrap -->
+</div><!-- /book-cover -->
+
+<script>
+const socket = io();
+let running = false, feedShown = false, lastPhone = 0, lastPosture = 0, lastPomodoros = 0;
+const CALIB_C = 289;
+let currentTab = 'home';
+
+function openTab(name) {
+  const panel = document.getElementById('slidePanel');
+
+  if (name === 'home') {
+    closePanel();
+    document.querySelector('[data-tab="home"]').classList.add('active');
+    return;
+  }
+
+  if (panel.classList.contains('open') && currentTab === name) { closePanel(); return; }
+
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.panel-section').forEach(s => s.classList.toggle('active', s.dataset.section === name));
+
+  const titles = { chronicle: 'Chronicle', profile: 'Profile', settings: 'Settings' };
+  document.getElementById('panelTitle').textContent = titles[name] || '';
+
+  currentTab = name;
+  panel.classList.add('open');
+
+  if (name === 'chronicle') loadHistory();
+  if (name === 'profile')   loadProfile();
+}
+
+function closePanel() {
+  document.getElementById('slidePanel').classList.remove('open');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  currentTab = 'home';
+}
+
+function showFeed(baseline) {
+  if (feedShown) return;
+  feedShown = true;
+  document.getElementById('videoFeed').style.display    = 'block';
+  document.getElementById('feedInactive').style.display = 'none';
+  document.getElementById('calibOverlay').style.display  = 'none';
+  if (baseline != null) {
+    const b = +baseline, t = (b * 0.85).toFixed(3);
+    document.getElementById('hudBaseline').textContent  = b.toFixed(3);
+    document.getElementById('hudThreshold').textContent = t;
+  }
+  document.getElementById('hudGaze').textContent = 'Active';
+}
+
+socket.on('state', s => {
+  const phase = s.phase ?? 'focusing';
+
+  if (phase === 'loading') {
+    document.getElementById('calibPct').textContent = 'Loading...';
+    document.getElementById('calibSamples').textContent = 'Preparing the equipment — one moment';
+    setStatus('Loading', 'grey');
+    return;
+  }
+
+  if (phase === 'calibrating') {
+    const pct = Math.max(0, Math.min(100, s.calibration_pct ?? 0));
+    document.getElementById('calibPct').textContent = pct + '%';
+    document.getElementById('calibArcFill').style.strokeDashoffset = CALIB_C * (1 - pct / 100);
+    document.getElementById('calibSamples').textContent = Math.round(pct * 0.6) + ' samples recorded';
+    setStatus('Calibrating', 'grey');
+    return;
+  }
+
+  if (!running) return;
+  if (!feedShown) showFeed(s.posture_baseline);
+  if (document.getElementById('calibOverlay').style.display !== 'none') {
+    document.getElementById('calibOverlay').style.display = 'none';
+  }
+
+  const score = s.focus_score ?? 0;
+  const sEl = document.getElementById('scoreNum');
+  sEl.innerHTML = score + '<span class="unit">%</span>';
+  sEl.className = 'score-numeral' + (score < 40 ? ' danger' : score < 70 ? ' warn' : '');
+  document.getElementById('xpFill').style.width = score + '%';
+
+  const grade = score >= 90 ? 'A+' : score >= 80 ? 'A' : score >= 70 ? 'B' : score >= 50 ? 'C' : 'F';
+  document.getElementById('gradeNum').textContent = grade;
+
+  document.getElementById('phoneNum').textContent   = s.phone_alerts   ?? 0;
+  document.getElementById('postureNum').textContent = s.posture_alerts ?? 0;
+  const m = Math.floor(s.session_mins ?? 0), sec = Math.round(((s.session_mins ?? 0) - m) * 60);
+  document.getElementById('timeNum').textContent = m + ':' + String(sec).padStart(2, '0');
+
+  const ps = s.pomodoro_secs ?? 0, pt = s.pomodoro_target ?? 1500;
+  const pct = Math.min(ps / pt, 1);
+  const sl = Math.max(pt - ps, 0), pm = Math.floor(sl / 60), pss = sl % 60;
+  const targetM = Math.floor(pt / 60), targetS = pt % 60;
+
+  document.getElementById('pomoTime').textContent = pm + ':' + String(pss).padStart(2, '0');
+  document.getElementById('pomoPct').textContent = Math.round(pct * 100) + '% of this session';
+  document.getElementById('pomoRuleFill').style.width = (pct * 100) + '%';
+  document.getElementById('pomoDone').textContent = s.pomodoros_done ?? 0;
+  document.getElementById('pomoTarget').textContent = targetM + ':' + String(targetS).padStart(2, '0');
+
+  const stMap = {
+    'PRODUCTIVE':     ['Active',         'purple'],
+    'PHONE DETECTED': ['Phone Detected', 'red'],
+    'POSTURE ALERT':  ['Posture Alert',  'gold'],
+    'USER AWAY':      ['Away',           'grey'],
+    'STOPPED':        ['Idle',           'grey'],
+    'LOADING':        ['Loading',        'grey'],
+    'CALIBRATING':    ['Calibrating',    'grey'],
+  };
+  const [label, color] = stMap[s.status] ?? ['Active', 'purple'];
+  setStatus(label, color);
+
+  if ((s.phone_alerts ?? 0) > lastPhone)     { flashBar(false); addToast('Phone Detected', ''); }
+  if ((s.posture_alerts ?? 0) > lastPosture) { flashBar(true);  addToast('Posture Alert', 'warn'); }
+  if ((s.pomodoros_done ?? 0) > lastPomodoros) addToast('Study Timer Complete — Rest Now', '');
+  lastPhone     = s.phone_alerts   ?? 0;
+  lastPosture   = s.posture_alerts ?? 0;
+  lastPomodoros = s.pomodoros_done ?? 0;
+
+  if (s.status === 'STOPPED') setRunning(false);
+});
+
+socket.on('session_saved', () => { addToast('Session recorded', ''); if (currentTab === 'chronicle') loadHistory(); });
+
+function setStatus(label, color) {
+  document.getElementById('runeStatus').textContent = label;
+  const dot = document.getElementById('runeGem');
+  dot.className = 'status-dot' + (color === 'red' ? ' red' : color === 'gold' ? ' gold' : color === 'grey' ? ' grey' : '');
+}
+
+async function startSession() {
+  running = true; feedShown = false;
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('calibOverlay').style.display = 'flex';
+  document.getElementById('videoFeed').style.display    = 'none';
+  document.getElementById('videoFeed').src              = '/video_feed';
+  document.getElementById('feedInactive').style.display = 'none';
+  setStatus('Calibrating', 'grey');
+
+  const res = await fetch('/api/start', { method: 'POST' });
+  const d = await res.json();
+  if (!d.ok) {
+    running = false;
+    document.getElementById('btnStart').disabled = false;
+    document.getElementById('btnStop').disabled  = true;
+    document.getElementById('calibOverlay').style.display = 'none';
+    document.getElementById('feedInactive').style.display = 'flex';
+    setStatus('Idle', 'grey');
+    addToast(d.msg || 'Could not start', 'warn');
+  }
+}
+
+async function stopSession() {
+  await fetch('/api/stop', { method: 'POST' });
+  setRunning(false);
+}
+
+function setRunning(on) {
+  running = on;
+  if (!on) feedShown = false;
+  document.getElementById('btnStart').disabled = on;
+  document.getElementById('btnStop').disabled  = !on;
+  if (!on) {
+    document.getElementById('videoFeed').style.display    = 'none';
+    document.getElementById('feedInactive').style.display = 'flex';
+    document.getElementById('calibOverlay').style.display = 'none';
+    document.getElementById('scoreNum').innerHTML = '—';
+    document.getElementById('scoreNum').className = 'score-numeral';
+    setStatus('Idle', 'grey');
+    document.getElementById('hudGaze').textContent = 'Offline';
+  }
+}
+
+let flashTimer;
+function flashBar(soft) {
+  const el = document.getElementById('flashBar');
+  el.className = 'flash-bar show' + (soft ? ' gold' : '');
+  clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => el.className = 'flash-bar', 700);
+}
+function addToast(msg, type) {
+  const wrap = document.getElementById('toastWrap');
+  const el = document.createElement('div');
+  el.className = 'toast-item ' + (type || '');
+  el.textContent = msg;
+  wrap.appendChild(el);
+  setTimeout(() => { el.style.transition = 'opacity .3s'; el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 3500);
+}
+
+async function loadHistory() {
+  const data = await (await fetch('/api/history')).json();
+  const c = document.getElementById('historyContainer');
+  if (!data.length) { c.innerHTML = '<div class="empty-lore">No sessions recorded yet.</div>'; return; }
+  c.innerHTML = `<table>
+    <thead><tr><th>Date</th><th>Dur.</th><th>Grade</th><th>Focus</th><th>Phone</th><th>Posture</th></tr></thead>
+    <tbody>${data.map(s => `<tr>
+      <td>${s.date}</td>
+      <td>${s.duration_mins}m</td>
+      <td><span class="grade-seal">${s.grade}</span></td>
+      <td>${s.focus_score}%</td>
+      <td>${s.phone_count}</td>
+      <td>${s.posture_count}</td>
+    </tr>`).join('')}</tbody>
+  </table>`;
+}
+
+async function loadProfile() {
+  const data = await (await fetch('/api/history')).json();
+  const sessions = document.getElementById('profSessions');
+  const avg = document.getElementById('profAvg');
+  const best = document.getElementById('profBest');
+  const minutes = document.getElementById('profMinutes');
+  if (!data.length) {
+    sessions.textContent = '0'; avg.textContent = '—'; best.textContent = '—'; minutes.textContent = '0';
+    return;
+  }
+  const totalMins = data.reduce((sum, s) => sum + (s.duration_mins || 0), 0);
+  const avgFocus  = Math.round(data.reduce((sum, s) => sum + (s.focus_score || 0), 0) / data.length);
+  const bestScore = Math.max(...data.map(s => s.focus_score || 0));
+  sessions.textContent = data.length;
+  avg.textContent = avgFocus + '%';
+  best.textContent = bestScore + '%';
+  minutes.textContent = totalMins;
+}
+
+let todosLocal = [];
+let todoIdCounter = 1;
+function renderTodosLocal() {
+  const c = document.getElementById('todoList');
+  if (!todosLocal.length) { c.innerHTML = '<div class="empty-lore">No tasks yet.</div>'; return; }
+  c.innerHTML = todosLocal.map(t => `
+    <div class="todo-item">
+      <div class="todo-check ${t.done ? 'done' : ''}" onclick="toggleTodoLocal(${t.id})"></div>
+      <div class="todo-text ${t.done ? 'done' : ''}">${escapeHtml(t.text)}</div>
+      <div class="todo-del" onclick="deleteTodoLocal(${t.id})">Remove</div>
+    </div>
+  `).join('');
+}
+function addTodoLocal() {
+  const input = document.getElementById('todoInput');
+  const text = input.value.trim();
+  if (!text) return;
+  todosLocal.push({ id: todoIdCounter++, text, done: false });
+  input.value = '';
+  renderTodosLocal();
+}
+function toggleTodoLocal(id) {
+  const t = todosLocal.find(t => t.id === id);
+  if (t) t.done = !t.done;
+  renderTodosLocal();
+}
+function deleteTodoLocal(id) {
+  todosLocal = todosLocal.filter(t => t.id !== id);
+  renderTodosLocal();
+}
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+renderTodosLocal();
+</script>
+</body>
+</html>
