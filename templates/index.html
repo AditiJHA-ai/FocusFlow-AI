@@ -561,6 +561,7 @@ td:first-child { color: var(--text-hi); font-family: var(--serif); font-size: 13
           <div class="feed-inactive-text">Awaiting activation</div>
         </div>
         <img id="videoFeed" src="" alt="" style="display:none;width:100%;height:100%;object-fit:cover">
+        <video id="camVideo" playsinline muted style="display:none"></video>
 
         <!-- Calibration overlay -->
         <div id="calibOverlay">
@@ -692,6 +693,48 @@ td:first-child { color: var(--text-hi); font-family: var(--serif); font-size: 13
 <script>
 const socket = io();
 let running = false, feedShown = false, lastPhone = 0, lastPosture = 0, lastPomodoros = 0;
+let camStream = null, feedUrl = null;
+const camVideo  = document.getElementById('camVideo');
+const capCanvas = document.createElement('canvas');
+const CAPTURE_WIDTH = 640;
+
+// Anonymous per-browser id so each visitor only sees their own session history
+const CLIENT_ID = (() => {
+  try {
+    let id = localStorage.getItem('ff_client_id');
+    if (!id) { id = crypto.randomUUID(); localStorage.setItem('ff_client_id', id); }
+    return id;
+  } catch (e) {
+    return 'anon-' + Math.random().toString(36).slice(2);
+  }
+})();
+
+// ── AUDIO (Web Audio — plays on the visitor's machine) ────────────────────────
+let audioCtx = null;
+function ensureAudio() {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { audioCtx = null; }
+}
+function playNotes(notes) {   // notes: [[freqHz, durationMs, gapAfterMs], ...]
+  if (!audioCtx) return;
+  let t = audioCtx.currentTime;
+  for (const [freq, dur, gap] of notes) {
+    const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.08, t);
+    gain.gain.setValueAtTime(0, t + dur / 1000);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + dur / 1000);
+    t += (dur + gap) / 1000;
+  }
+}
+const chimePhone    = () => playNotes([[880, 120, 50], [660, 200, 0]]);   // soft descending two-tone
+const chimePosture  = () => playNotes([[523, 100, 40], [440, 150, 0]]);   // single soft nudge
+const chimePomodoro = () => playNotes([[523, 180, 40], [659, 180, 40], [784, 180, 0]]);  // ascending
 const POMO_C = 263.9, CALIB_C = 351.9;
 
 function showFeed(baseline) {
@@ -715,7 +758,8 @@ function showFeed(baseline) {
 }
 
 // ── SOCKET STATE ──────────────────────────────────────────────────────────────
-socket.on('state', s => {
+socket.on('state', handleState);
+function handleState(s) {
   // NOTE: do NOT guard calibrating phase with !running — 
   // running is set true in startSession() but calibration updates
   // arrive immediately. Check phase first.
@@ -797,17 +841,24 @@ socket.on('state', s => {
   document.getElementById('feedMeta').textContent = s.status ?? 'ACTIVE';
 
   // Flash alerts
-  if ((s.phone_alerts ?? 0) > lastPhone)     { flashBar(false); flashCell('cellPhone'); addToast('⚠ Phone Detected', 'danger'); }
-  if ((s.posture_alerts ?? 0) > lastPosture) { flashBar(true);  flashCell('cellPosture'); addToast('⚠ Posture Alert', 'warn'); }
-  if ((s.pomodoros_done ?? 0) > lastPomodoros) addToast('🍅 Pomodoro Complete! Rest now.', '');
+  if ((s.phone_alerts ?? 0) > lastPhone)     { chimePhone();   flashBar(false); flashCell('cellPhone'); addToast('⚠ Phone Detected', 'danger'); }
+  if ((s.posture_alerts ?? 0) > lastPosture) { chimePosture(); flashBar(true);  flashCell('cellPosture'); addToast('⚠ Posture Alert', 'warn'); }
+  if ((s.pomodoros_done ?? 0) > lastPomodoros) { chimePomodoro(); addToast('🍅 Pomodoro Complete! Rest now.', ''); }
   lastPhone    = s.phone_alerts   ?? 0;
   lastPosture  = s.posture_alerts ?? 0;
   lastPomodoros= s.pomodoros_done ?? 0;
 
   if (s.status === 'STOPPED') setRunning(false);
-});
+}
 
 socket.on('session_saved', () => { addToast('✦ Session saved to chronicle', ''); loadHistory(); });
+
+socket.on('disconnect', () => {
+  if (!running) return;
+  stopCamera();
+  setRunning(false);
+  addToast('Connection lost — session ended', 'danger');
+});
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function setStatus(label, color) {
@@ -819,29 +870,82 @@ function setStatus(label, color) {
 async function startSession() {
   running = true;
   feedShown = false;
+  lastPhone = lastPosture = lastPomodoros = 0;
+  ensureAudio();   // must happen inside the click handler for browsers to allow sound
   document.getElementById('btnStart').disabled = true;
   document.getElementById('btnStop').disabled  = false;
   document.getElementById('calibOverlay').style.display = 'flex';
   document.getElementById('videoFeed').style.display    = 'none';
-  document.getElementById('videoFeed').src              = '/video_feed';
   document.getElementById('feedInactive').style.display = 'none';
   setStatus('Calibrating', 'grey');
 
-  const res = await fetch('/api/start', { method: 'POST' });
-  const d   = await res.json();
-  if (!d.ok) {
-    running = false;
-    document.getElementById('btnStart').disabled = false;
-    document.getElementById('btnStop').disabled  = true;
-    document.getElementById('calibOverlay').style.display = 'none';
-    document.getElementById('feedInactive').style.display = 'flex';
-    setStatus('Dormant', 'grey');
-    addToast(d.msg || 'Could not start', 'danger');
+  try {
+    camStream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 } }, audio: false,
+    });
+    camVideo.srcObject = camStream;
+    await camVideo.play();
+  } catch (e) {
+    failStart('Camera access is needed — please allow it and try again');
+    return;
   }
+
+  socket.timeout(120000).emit('start', { client_id: CLIENT_ID }, (err, d) => {
+    if (err || !d || !d.ok) { failStart((d && d.msg) || 'Could not start'); return; }
+    sendFrame();
+  });
 }
 
-async function stopSession() {
-  await fetch('/api/stop', { method: 'POST' });
+function failStart(msg) {
+  stopCamera();
+  running = false;
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  document.getElementById('calibOverlay').style.display = 'none';
+  document.getElementById('feedInactive').style.display = 'flex';
+  setStatus('Dormant', 'grey');
+  addToast(msg, 'danger');
+}
+
+// Capture one webcam frame, send it, and send the next one once the server
+// has answered — so frame rate adapts to how fast the server can process.
+async function sendFrame() {
+  if (!running || !camStream) return;
+  const vw = camVideo.videoWidth, vh = camVideo.videoHeight;
+  if (!vw || !vh) { setTimeout(sendFrame, 100); return; }
+  capCanvas.width  = CAPTURE_WIDTH;
+  capCanvas.height = Math.round(CAPTURE_WIDTH * vh / vw);
+  capCanvas.getContext('2d').drawImage(camVideo, 0, 0, capCanvas.width, capCanvas.height);
+  const blob = await new Promise(r => capCanvas.toBlob(r, 'image/jpeg', 0.7));
+  if (!running || !blob) return;
+  const buf = await blob.arrayBuffer();
+  socket.timeout(15000).emit('frame', buf, (err, res) => {
+    if (!running) return;
+    if (!err && res) {
+      if (res.img) showFrame(res.img);
+      if (res.state) handleState(res.state);
+    }
+    setTimeout(sendFrame, 0);
+  });
+}
+
+function showFrame(bytes) {
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+  document.getElementById('videoFeed').src = url;
+  if (feedUrl) URL.revokeObjectURL(feedUrl);
+  feedUrl = url;
+}
+
+function stopCamera() {
+  if (camStream) camStream.getTracks().forEach(t => t.stop());
+  camStream = null;
+  camVideo.srcObject = null;
+}
+
+function stopSession() {
+  running = false;
+  stopCamera();
+  socket.emit('stop', {});
   setRunning(false);
 }
 
@@ -888,7 +992,7 @@ function addToast(msg, type) {
 }
 
 async function loadHistory() {
-  const data = await (await fetch('/api/history')).json();
+  const data = await (await fetch('/api/history?client_id=' + encodeURIComponent(CLIENT_ID))).json();
   const c    = document.getElementById('historyContainer');
   if (!data.length) { c.innerHTML = '<div class="empty-lore">No sessions recorded yet. Begin your first session above.</div>'; return; }
   const gc = { 'A+': 'gAp', A: 'gA', B: 'gB', C: 'gC', F: 'gF' };

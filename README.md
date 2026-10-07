@@ -1,3 +1,14 @@
+---
+title: FocusFlow AI
+emoji: 🎯
+colorFrom: purple
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+short_description: Real-time focus and posture monitor (YOLOv11 + MediaPipe)
+---
+
 # FocusFlow AI 
 
 > Real-time productivity and posture monitoring using Computer Vision and Deep Learning
@@ -8,7 +19,7 @@
 ![Flask](https://img.shields.io/badge/Flask-SocketIO-orange)
 ![License](https://img.shields.io/badge/License-MIT-purple)
 
-FocusFlow AI is a web-based Computer Vision Attention Monitor that uses edge AI to track real-time productivity. It runs as a local web app on any laptop with a webcam — no cloud, no data leaves your machine.
+FocusFlow AI is a web-based Computer Vision Attention Monitor that uses edge AI to track real-time productivity. It runs in any browser with a webcam: the browser streams camera frames to the server, which runs the AI models and sends back the annotated video and live stats. Frames are processed in memory and never stored; only the session summary (score, alert counts, duration) is saved.
 
 ---
 
@@ -37,12 +48,12 @@ A real-time focus score (0–100, starts at 100 and decays/recovers frame by fra
 |-------|-----------|
 | AI — Object Detection | YOLOv11 Nano (COCO dataset, class 67 — "cell phone") |
 | AI — Pose Estimation | MediaPipe BlazePose (33 landmarks) |
-| AI — Face Mesh | MediaPipe Face Mesh (468 + iris landmarks) — currently loaded per frame but only feeds a dormant gaze-estimation helper, see *Known Limitations* |
 | Backend | Python, Flask, Flask-SocketIO (`async_mode='threading'`) |
 | Frontend | HTML5, CSS3, Vanilla JS, Socket.io |
 | Database | SQLite |
-| Video | OpenCV (MJPEG stream) |
-| Audio | winsound (Windows) |
+| Video | Browser webcam (`getUserMedia`) → JPEG frames over Socket.IO → OpenCV |
+| Audio | Web Audio API (chimes play in the browser) |
+| Deployment | Docker (Hugging Face Spaces) · gunicorn |
 
 ---
 
@@ -52,11 +63,12 @@ A real-time focus score (0–100, starts at 100 and decays/recovers frame by fra
 FocusFlow_Core/
 ├── app.py              ← Flask + Flask-SocketIO web server (entry point)
 ├── engine.py           ← AI engine: all CV models + detection logic
-├── database.py         ← SQLite session history
+├── database.py         ← SQLite session history (per browser)
+├── requirements.txt
+├── Dockerfile          ← production image (used by Hugging Face Spaces)
 ├── focusflow.db        ← auto-created on first run
-├── yolo11n.pt          ← YOLO weights (download separately)
+├── yolo11n.pt          ← YOLO weights (auto-downloaded locally; baked into the Docker image)
 ├── pose_landmarker_lite.task   ← auto-downloaded on first run (MediaPipe Tasks API only)
-├── face_landmarker.task        ← auto-downloaded on first run (MediaPipe Tasks API only)
 └── templates/
     └── index.html      ← dashboard UI
 ```
@@ -65,45 +77,66 @@ FocusFlow_Core/
 
 ---
 
-## Setup & Installation
+## Deploy (free) — Hugging Face Spaces
+
+The repo is ready to run as a Docker Space. The free CPU tier (2 vCPU, 16 GB RAM) handles a few simultaneous users at roughly 5–10 processed frames per second each.
+
+1. Create a free account at [huggingface.co](https://huggingface.co/join).
+2. Go to **New Space** → pick a name (e.g. `focusflow-ai`) → **SDK: Docker** → **Blank** → hardware **CPU basic (free)** → **Create Space**.
+3. Push this repo to the Space (use a Hugging Face [access token](https://huggingface.co/settings/tokens) with *write* permission as the password):
+   ```bash
+   git remote add space https://huggingface.co/spaces/YOUR_HF_USERNAME/focusflow-ai
+   git push space main
+   ```
+4. Wait for the build (~5–10 min the first time). The app is then live at
+   `https://YOUR_HF_USERNAME-focusflow-ai.hf.space`.
+
+**Keep the Space in sync with GitHub automatically (optional):** in this GitHub repo go to *Settings → Secrets and variables → Actions* and add a secret `HF_TOKEN` (your write token) and a variable `HF_SPACE` (e.g. `YOUR_HF_USERNAME/focusflow-ai`). Every push to `main` then redeploys via `.github/workflows/sync-to-hf.yml`.
+
+**Notes**
+- Webcam access requires HTTPS, which Spaces provides. If the camera prompt doesn't appear on the `huggingface.co/spaces/...` page, open the direct `*.hf.space` URL.
+- Free Spaces sleep after 48 h without visitors (the first visit wakes them in about a minute) and their disk is not persistent, so session history resets when the Space restarts. Attach persistent storage and set `FOCUSFLOW_DB=/data/focusflow.db` to keep it.
+- `MAX_SESSIONS` (default `4`) limits how many people can run a session at once so the CPU isn't overloaded.
+
+---
+
+## Run Locally
 
 ### Prerequisites
-- Python 3.10 or higher
-- Windows (for audio alerts — see note below)
+- Python 3.10–3.12
 - Webcam
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/FocusFlow-AI.git
+git clone https://github.com/AditiJHA-ai/FocusFlow-AI.git
 cd FocusFlow-AI
 ```
 
 ### 2. Install dependencies
 ```bash
-pip install flask flask-socketio opencv-python mediapipe ultralytics numpy
+pip install -r requirements.txt
 ```
 
-### 3. Download YOLO weights
-Download `yolo11n.pt` from [Ultralytics releases](https://github.com/ultralytics/assets/releases) and place it in the project folder.
-
-### 4. Run
+### 3. Run
 ```bash
 python app.py
 ```
 
-### 5. Open in browser
+### 4. Open in browser
 ```
 http://localhost:5000
 ```
 
-> **First run note:** if you're on MediaPipe's Tasks API (≥ 0.10), the app will automatically download two model files (~35MB total) on first run. Internet connection required for this one-time download only.
+> **First run note:** YOLO weights (`yolo11n.pt`, ~5 MB) are downloaded automatically on first run if they aren't in the project folder. Internet connection required for this one-time download only.
+
+Or with Docker: `docker build -t focusflow . && docker run -p 7860:7860 focusflow`, then open `http://localhost:7860`.
 
 ---
 
 ## How to Use
 
-1. Open `http://localhost:5000` in your browser
-2. Click **Begin Session**
+1. Open the app in your browser
+2. Click **Begin Session** and allow camera access
 3. **Sit naturally for 30 seconds** during calibration — the system learns your posture
 4. Monitor yourself! Alerts fire for phone use and slouching
 5. Click **End Session** — your session is saved automatically
@@ -124,7 +157,7 @@ if gap < posture_threshold:
     # SLOUCH DETECTED
 ```
 
-### Focus Score (per frame)
+### Focus Score (per frame, at a 30 fps reference)
 | Event | Score Change |
 |-------|-------------|
 | Phone detected | −0.4 |
@@ -132,7 +165,7 @@ if gap < posture_threshold:
 | User away (no pose detected) | −0.1 |
 | Clean focus | +0.05 (capped at 100) |
 
-Score is clamped to the 0–100 range every frame.
+Score is clamped to the 0–100 range every frame. Because frames arrive at whatever rate the server can process, each change is scaled by the real time elapsed since the previous frame (so the score moves at the same speed at 8 fps as at 30 fps). An alert is counted, and chimes, once when it starts, not on every frame it stays active.
 
 ### Smart Pomodoro
 A frame only counts as "clean" and advances the Pomodoro clock when status is `PRODUCTIVE` with no active phone or posture alert. Once 25 minutes of clean time accumulate, a Pomodoro completes, the counter increments, and the session enters a `break` phase.
@@ -153,11 +186,10 @@ A frame only counts as "clean" and advances the Pomodoro clock when status is `P
 
 ## Known Limitations
 
-- Audio alerts use `winsound` (Windows only). Replace with `pygame.mixer` for cross-platform.
-- Single user per instance — one webcam session (`cv2.VideoCapture(0)`) and one global state at a time.
+- Processing runs server-side on CPU, so frame rate per user drops as more people use the app at once.
 - Skeleton drawing only runs on the legacy MediaPipe API branch; the Tasks API branch doesn't draw the pose skeleton (would need a custom drawing implementation).
-- Face Mesh is computed every frame but isn't wired into any decision — it's currently unused compute overhead until the gaze-estimation path is connected.
-- No drowsiness/eye-closure detection exists yet, despite it being a natural extension of the existing Face Mesh pipeline.
+- Face Mesh is not run (it fed no decision); re-enable it when the gaze-estimation path is connected.
+- No drowsiness/eye-closure detection exists yet — it would build on that same Face Mesh pipeline.
 
 ---
 
